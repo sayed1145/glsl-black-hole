@@ -1,0 +1,25 @@
+{
+  "size": [
+    960,
+    960
+  ],
+  "frames": 200,
+  "loop": 0,
+  "duration_ms": 8000,
+  "shader_period_endpoint_max_error": 0,
+  "first_frame_quantization_rmse": 1.1840097037558277,
+  "gif_bytes": 21591874,
+  "render_size": 1920,
+  "frame_rate": 25,
+  "render_seconds": 94.69,
+  "period_0_vs_8_max_error": 0,
+  "next_frame_mean_difference": 2.353224786245394,
+  "loop_boundary_mean_difference": 2.370935566200896,
+  "two_second_mean_difference": 13.118760422333983,
+  "webgl2_test": {
+    "shader_compile": "passed",
+    "gl_error": 0,
+    "pause_play_reset_quality_controls": "passed",
+    "browser": "Chromium / SwiftShader"
+  }
+}

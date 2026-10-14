@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.venv/
+# large regenerable renders (see README)
+output/*.gif
+output/*.mp4
+output/still*.png
+output/frames/

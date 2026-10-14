@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>黑洞 · 纯 GLSL 着色器</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#000;color:#dfd9ce}*{box-sizing:border-box}body{margin:0;overflow:hidden}canvas{display:block;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(100vw,100vh);height:min(100vw,100vh);background:#000}.identity{position:fixed;left:28px;top:23px;pointer-events:none;user-select:none}.eyebrow{font-size:10px;letter-spacing:.28em;color:#91877a;margin-bottom:7px}.identity h1{font-size:16px;letter-spacing:.16em;font-weight:500;margin:0}.sub{margin-top:8px;font-size:10px;color:#666b70;letter-spacing:.06em}.controls{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);width:min(570px,calc(100vw - 32px));padding:12px 16px;border:1px solid #ffffff14;border-radius:14px;background:#090d10dc;backdrop-filter:blur(16px);display:flex;flex-wrap:wrap;align-items:center;gap:14px;font-size:11px;color:#929a9e}.controls button,.controls select{font:inherit;color:#e2d3ba;background:#ffffff08;border:1px solid #ffffff1e;border-radius:7px;padding:7px 10px;cursor:pointer}.controls button:hover{background:#ffffff13}.controls button:focus-visible,.controls select:focus-visible,input:focus-visible{outline:2px solid #d8b78c;outline-offset:3px}label{display:flex;align-items:center;gap:6px}.timeline{width:100%;display:flex;align-items:center;gap:12px}.timeline input{min-width:0;flex:1;accent-color:#d6b68d;height:4px;cursor:pointer}.time{font-variant-numeric:tabular-nums;min-width:67px;color:#a59885;font-size:10px}.status{margin-left:auto;font-size:10px;color:#69767d}.error{display:none;position:fixed;inset:25% 14%;background:#0b0f13;border:1px solid #574b3c;padding:30px;border-radius:12px;font-size:14px;line-height:1.8;white-space:pre-wrap;overflow:auto}.footer{position:fixed;right:24px;top:28px;text-align:right;font-size:9px;line-height:1.9;letter-spacing:.12em;color:#53616b}.footer span{color:#807461}@media(max-width:550px){.identity{left:18px;top:18px}.identity h1{font-size:13px}.sub{max-width:200px;line-height:1.5}.footer{display:none}.controls{bottom:14px;gap:10px;padding:10px 12px}.status{font-size:9px}.controls button,.controls select{padding:6px 8px}}
+</style>
+</head>
+<body>
+<canvas id="scene" aria-label="由纯 GLSL 着色器生成的动态黑洞、吸积盘和星空"></canvas>
+<header class="identity"><div class="eyebrow">PROCEDURAL SPACETIME</div><h1>黑洞 / BLACK HOLE</h1><div class="sub">程序化光线路径 · 吸积盘 · 无原图贴图</div></header>
+<div class="footer"><span>GLSL / WEBGL 2</span><br>08 SECOND LOOP<br>NO EXTERNAL ASSETS</div>
+<div class="controls">
+<button id="toggle" type="button" aria-label="暂停动画">暂停</button>
+<button id="reset" type="button" aria-label="回到第一帧">重置</button>
+<label>速度 <select id="speed" aria-label="动画播放速度"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label>
+<label>画质 <select id="quality" aria-label="渲染分辨率"><option value="720">720</option><option value="960" selected>960</option><option value="1440">1440</option><option value="1920">1920</option></select></label>
+<span class="status" id="status" role="status">初始化光线路径…</span>
+<div class="timeline"><input id="seek" type="range" min="0" max="7.999" step="0.001" value="0" aria-label="循环时间轴"><output class="time" id="clock">0.00 / 8 s</output></div>
+</div>
+<div id="error" class="error" role="alert"></div>
+<script>
+'use strict';
+const SHADERS=/*__SHADERS__*/;
+const PARAMETERS=/*__PARAMETERS__*/;
+const canvas=document.getElementById('scene'),statusEl=document.getElementById('status');
+const errorEl=document.getElementById('error');
+function showError(error){errorEl.style.display='block';errorEl.textContent='着色器无法启动。请用支持 WebGL 2 的桌面浏览器打开本文件，并启用硬件加速。\n\n'+String(error);statusEl.textContent='无法渲染';console.error(error);}
+try{
+ const gl=canvas.getContext('webgl2',{alpha:false,depth:false,stencil:false,antialias:false,preserveDrawingBuffer:true,powerPreference:'high-performance'});
+ if(!gl)throw new Error('WebGL 2 不可用');
+ if(!gl.getExtension('EXT_color_buffer_float'))throw new Error('缺少 EXT_color_buffer_float');
+ gl.getExtension('OES_texture_float_linear');
+ const vertex='#version 300 es\nprecision highp float;\nin vec2 in_pos;\nvoid main(){gl_Position=vec4(in_pos,0.,1.);}';
+ function compile(type,source){const s=gl.createShader(type);gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s;}
+ function makeProgram(source){
+  const fragment=source.replace('#version 330','#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;');
+  const p=gl.createProgram(),vs=compile(gl.VERTEX_SHADER,vertex),fs=compile(gl.FRAGMENT_SHADER,fragment);
+  gl.attachShader(p,vs);gl.attachShader(p,fs);gl.bindAttribLocation(p,0,'in_pos');gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(p));
+  gl.deleteShader(vs);gl.deleteShader(fs);return {program:p,uniforms:{}};
+ }
+ const programs={};for(const [key,value] of Object.entries(SHADERS))programs[key]=makeProgram(value);
+ const vao=gl.createVertexArray();gl.bindVertexArray(vao);const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+ function loc(p,name){if(!(name in p.uniforms))p.uniforms[name]=gl.getUniformLocation(p.program,name);return p.uniforms[name];}
+ function f(p,name,value){gl.uniform1f(loc(p,name),value);}
+ function v2(p,name,x,y){gl.uniform2f(loc(p,name),x,y);}
+ function tex(p,name,unit,texture){gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,texture);gl.uniform1i(loc(p,name),unit);}
+ const ownedTextures=[],ownedFbos=[];let n=960,maps=[],geoFbo,hdr,blooms=[];
+ function texture(size,internal,type,linear){const t=gl.createTexture();ownedTextures.push(t);gl.bindTexture(gl.TEXTURE_2D,t);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,linear?gl.LINEAR:gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,linear?gl.LINEAR:gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.texImage2D(gl.TEXTURE_2D,0,internal,size,size,0,gl.RGBA,type,null);return t;}
+ function framebuffer(textures){const fb=gl.createFramebuffer();ownedFbos.push(fb);gl.bindFramebuffer(gl.FRAMEBUFFER,fb);const draw=[];textures.forEach((t,i)=>{gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0+i,gl.TEXTURE_2D,t,0);draw.push(gl.COLOR_ATTACHMENT0+i);});gl.drawBuffers(draw);if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw new Error('浮点帧缓冲不完整');return fb;}
+ function target(size){const t=texture(size,gl.RGBA16F,gl.HALF_FLOAT,true);return {texture:t,fbo:framebuffer([t]),size};}
+ function common(p,time){v2(p,'uResolution',n,n);v2(p,'uCenter',...PARAMETERS.center);f(p,'uTilt',PARAMETERS.tilt);f(p,'uTime',time%8);}
+ function draw(p,fb,size){gl.useProgram(p.program);gl.bindFramebuffer(gl.FRAMEBUFFER,fb);gl.viewport(0,0,size,size);}
+ function triangle(){gl.drawArrays(gl.TRIANGLES,0,3);}
+ function setup(size){
+  ownedTextures.splice(0).forEach(t=>gl.deleteTexture(t));ownedFbos.splice(0).forEach(fb=>gl.deleteFramebuffer(fb));
+  n=size;canvas.width=n;canvas.height=n;
+  maps=Array.from({length:3},()=>texture(n,gl.RGBA32F,gl.FLOAT,false));geoFbo=framebuffer(maps);hdr=target(n);blooms=[2,4,12,24].map(d=>[target(Math.max(8,Math.floor(n/d))),target(Math.max(8,Math.floor(n/d)))]);
+  const p=programs.geometry;draw(p,geoFbo,n);common(p,0);f(p,'uScale',PARAMETERS.scale);f(p,'uInclination',PARAMETERS.inclination);f(p,'uInner',PARAMETERS.inner);triangle();
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);statusEl.textContent='实时 · 无贴图';
+ }
+ function render(time){
+  let p=programs.emission;draw(p,hdr.fbo,n);common(p,time);maps.forEach((t,i)=>tex(p,'uMap'+i,i,t));triangle();
+  p=programs.blur;let source=hdr.texture;
+  for(const [a,b] of blooms){draw(p,a.fbo,a.size);v2(p,'uResolution',a.size,a.size);v2(p,'uDirection',1/a.size,0);tex(p,'uSource',0,source);triangle();draw(p,b.fbo,b.size);v2(p,'uDirection',0,1/b.size);tex(p,'uSource',0,a.texture);triangle();source=b.texture;}
+  p=programs.composite;draw(p,null,n);common(p,time);tex(p,'uEmission',0,hdr.texture);blooms.forEach((pair,i)=>tex(p,'uBloom'+i,i+1,pair[1].texture));triangle();
+ }
+ const pauseBtn=document.getElementById('toggle'),seek=document.getElementById('seek'),clock=document.getElementById('clock');
+ let paused=false,elapsed=0,speed=1,last=performance.now(),dirty=true;
+ function updateTime(){seek.value=String(elapsed%8);clock.value=(elapsed%8).toFixed(2)+' / 8 s';}
+ function toggle(){paused=!paused;pauseBtn.textContent=paused?'播放':'暂停';pauseBtn.setAttribute('aria-label',paused?'播放动画':'暂停动画');}
+ pauseBtn.addEventListener('click',toggle);
+ document.getElementById('reset').addEventListener('click',()=>{elapsed=0;dirty=true;updateTime();});
+ document.getElementById('speed').addEventListener('change',e=>speed=Number(e.target.value));
+ document.getElementById('quality').addEventListener('change',e=>{try{setup(Number(e.target.value));dirty=true;}catch(error){showError(error);}});
+ seek.addEventListener('input',()=>{elapsed=Number(seek.value);dirty=true;updateTime();});
+ document.addEventListener('keydown',e=>{if(e.code==='Space'&&!['INPUT','SELECT','BUTTON'].includes(document.activeElement.tagName)){e.preventDefault();toggle();}});
+ document.addEventListener('visibilitychange',()=>last=performance.now());
+ gl.disable(gl.DEPTH_TEST);gl.disable(gl.BLEND);setup(960);
+ const testMode=new URLSearchParams(location.search).has('test');if(testMode){paused=true;pauseBtn.textContent='播放';}
+ function animate(now){const dt=Math.min((now-last)/1000,.15);last=now;if(!paused&&!document.hidden){elapsed=(elapsed+dt*speed)%8;dirty=true;}if(dirty){render(elapsed);updateTime();dirty=false;}requestAnimationFrame(animate);}
+ window.shaderDemo={renderAt(t){paused=true;elapsed=t%8;render(elapsed);updateTime();pauseBtn.textContent='播放';},getState(){return {paused,time:elapsed,size:n,error:gl.getError()};},setQuality(s){setup(s);render(elapsed);}};
+ window.__shaderReady=true;requestAnimationFrame(animate);
+}catch(error){showError(error);}
+</script>
+</body>
+</html>
